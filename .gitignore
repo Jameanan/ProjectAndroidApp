@@ -1,0 +1,75 @@
+# ========== OS / Misc ==========
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*.class
+*.pyc
+.history
+.svn/
+.atom/
+.build/
+.buildlog/
+.swiftpm/
+migrate_working_dir/
+
+# ========== IDE ==========
+*.iml
+*.ipr
+*.iws
+.idea/
+# ถ้าไม่อยากแชร์ config VS Code ให้เปิดใช้บรรทัดนี้
+#.vscode/
+
+# ========== Flutter / Dart / Pub ==========
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+**/doc/api/
+coverage/
+build/
+**/ios/Flutter/.last_build_id
+
+# Symbolication / Obfuscation
+app.*.symbols
+app.*.map.json
+
+# ========== Android ==========
+android/.gradle/
+android/local.properties
+# build variants
+/android/app/debug
+/android/app/profile
+/android/app/release
+# signing / keystore (ห้ามขึ้น repo)
+/*.jks
+/*.keystore
+**/signing.properties
+**/key.properties
+# Firebase config (อย่า push ถ้าเป็นโปรเจกต์ส่วนตัว)
+android/app/google-services.json
+
+# ========== iOS ==========
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+ios/.symlinks/
+ios/Pods/           # ถ้าอยากแชร์ Pods ให้คอมเมนต์บรรทัดนี้
+# Firebase config (ส่วนตัวอย่า push)
+ios/Runner/GoogleService-Info.plist
+
+# ========== Desktop targets (Flutter) ==========
+linux/flutter/ephemeral/
+macos/Flutter/ephemeral/
+windows/flutter/ephemeral/
+
+# ========== Env / Secrets ==========
+.env
+**/secrets.*
+**/keys/**
+
