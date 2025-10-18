@@ -5,122 +5,125 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
 class ApiService {
-  //192.168.1.100 เน็ตห้อง
-  //172.20.10.4 เน็ตทรศ.
-  static const String baseUrl = 'http://172.20.10.4:8000';
+  static String _globalBaseUrl = 'http://172.20.10.4:8000';
+  static void setBaseUrl(String url) => _globalBaseUrl = url;
+  static String get baseUrlGlobal => _globalBaseUrl;
 
-  /// Predict เมนูจากรูป (ของเดิม)
-  static Future<Map<String, dynamic>?> uploadImage(File imageFile) async {
+  final String baseUrl;
+  ApiService(this.baseUrl);
+
+
+  /// POST /predict/ : อัปโหลดรูปให้โมเดลทำนาย
+  Future<Map<String, dynamic>> predict({
+    required String filePath,
+    bool useNoSugar = false,
+    String? uid,
+  }) async {
     final uri = Uri.parse('$baseUrl/predict/');
-    final request = http.MultipartRequest('POST', uri)
-      ..files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          imageFile.path,
-          contentType: MediaType('image', _inferExt(imageFile.path)),
-        ),
-      );
+    final req = http.MultipartRequest('POST', uri)
+      ..fields['use_nosugar'] = useNoSugar.toString()
+      ..fields['save_image']  = 'true'
+      ..fields['uid']         = uid ?? 'public'
+      ..files.add(await http.MultipartFile.fromPath(
+        'file', filePath, contentType: MediaType('image','jpeg'),
+      ));
 
-    try {
-      final streamed = await request.send();
-      final resp = await http.Response.fromStream(streamed);
-      if (resp.statusCode == 200) {
-        return json.decode(resp.body) as Map<String, dynamic>;
-      }
-      // ล็อกไว้ดูตอนดีบัก (ไม่ throw เพื่อไม่กระทบ flow เดิม)
-      // ignore: avoid_print
-      print('Predict error: ${resp.statusCode} ${resp.body}');
-      return null;
-    } catch (e) {
-      // ignore: avoid_print
-      print('Predict exception: $e');
-      return null;
+    final streamed = await req.send();
+    final resp = await http.Response.fromStream(streamed);
+    if (resp.statusCode != 200) {
+      throw Exception('predict failed: ${resp.statusCode} ${resp.body}');
     }
+    return jsonDecode(resp.body) as Map<String, dynamic>;
   }
 
-  /// ดึงโภชนาการตามชื่อเมนู (ของเดิม)
-  static Future<Map<String, dynamic>?> getNutritionByMenuName(String menuName) async {
-    final uri = Uri.parse('$baseUrl/nutrition/$menuName');
-    try {
-      final resp = await http.get(uri);
-      if (resp.statusCode == 200) {
-        return json.decode(resp.body) as Map<String, dynamic>;
-      }
-      // ignore: avoid_print
-      print('getNutrition error: ${resp.statusCode} ${resp.body}');
-      return null;
-    } catch (e) {
-      // ignore: avoid_print
-      print('getNutrition exception: $e');
-      return null;
-    }
-  }
-
-  /// ========= ใหม่/สำคัญ: อัปโหลดรูปไป FastAPI → ได้ **URL** กลับมา =========
-  ///
-  /// - ถ้าเซิร์ฟเวอร์คืน `url` (absolute) จะใช้ค่านั้นเลย
-  /// - ถ้าคืน `image_path` (relative) จะประกอบเป็น `$baseUrl + image_path`
-  static Future<String?> uploadImageAndGetUrl({
-    required File imageFile,
-    required String uid, // ใช้เฉพาะผู้ใช้ที่ล็อกอิน
-    String? bucket,      // ถ้าส่งมา เช่น 'my_menus' จะถูกส่งไปยังเซิร์ฟเวอร์
+  /// POST /upload-image : อัปโหลดรูปเก็บไฟล์และได้ URL
+  Future<String> uploadOnly({
+    required String filePath,
+    String? uid,
   }) async {
     final uri = Uri.parse('$baseUrl/upload-image');
+    final req = http.MultipartRequest('POST', uri)
+      ..fields['uid'] = uid ?? 'public'
+      ..files.add(await http.MultipartFile.fromPath(
+        'file', filePath, contentType: MediaType('image','jpeg'),
+      ));
 
-    final request = http.MultipartRequest('POST', uri)
-      ..fields['uid'] = uid
-      ..files.add(
-        await http.MultipartFile.fromPath(
-          'file',
-          imageFile.path,
-          contentType: MediaType('image', _inferExt(imageFile.path)),
-        ),
-      );
-
-    if (bucket != null && bucket.isNotEmpty) {
-      request.fields['bucket'] = bucket;
+    final streamed = await req.send();
+    final resp = await http.Response.fromStream(streamed);
+    if (resp.statusCode != 200) {
+      throw Exception('upload failed: ${resp.statusCode} ${resp.body}');
     }
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    final direct = (map['url'] as String?)?.trim();
+    if (direct != null && direct.isNotEmpty) return direct;
 
+    final rel = (map['image_path'] as String?)?.trim();
+    if (rel != null && rel.isNotEmpty) return _joinBase(baseUrl, rel);
+
+    throw Exception('upload failed: no url in response');
+  }
+
+  /// GET /nutrition/<menuName> : (instance) — เปลี่ยนชื่อเพื่อไม่ชนกับ static
+  Future<Map<String, dynamic>> fetchNutritionByMenuName(String menuName) async {
+    final uri = Uri.parse('$baseUrl/nutrition/$menuName');
+    final resp = await http.get(uri);
+    if (resp.statusCode != 200) {
+      throw Exception('getNutrition failed: ${resp.statusCode} ${resp.body}');
+    }
+    return jsonDecode(resp.body) as Map<String, dynamic>;
+  }
+
+  // =============== Static shims (compat โค้ดเก่า) ===============
+
+  /// เดิม: ApiService.uploadImage(File) -> Map<String,dynamic>?
+  static Future<Map<String, dynamic>?> uploadImage(File imageFile) async {
+    final api = ApiService(_globalBaseUrl);
     try {
-      final streamed = await request.send();
-      final resp = await http.Response.fromStream(streamed);
-
-      if (resp.statusCode == 200) {
-        final Map<String, dynamic> body = json.decode(resp.body) as Map<String, dynamic>;
-
-        // 1) ใช้ absolute URL ถ้ามี
-        final direct = (body['url'] as String?)?.trim();
-        if (direct != null && direct.isNotEmpty) return direct;
-
-        // 2) fallback ต่อจาก relative path
-        final rel = (body['image_path'] as String?)?.trim();
-        if (rel != null && rel.isNotEmpty) {
-          return _joinBase(baseUrl, rel);
-        }
-        return null;
-      } else {
-        // ignore: avoid_print
-        print('uploadImageAndGetUrl error: ${resp.statusCode} ${resp.body}');
-        return null;
-      }
+      final map = await api.predict(
+        filePath: imageFile.path,
+        useNoSugar: false,
+        uid: 'public',
+      );
+      return map;
     } catch (e) {
       // ignore: avoid_print
-      print('uploadImageAndGetUrl exception: $e');
+      print('uploadImage compat failed: $e');
       return null;
     }
   }
 
-  // ----------------- helpers -----------------
-  static String _inferExt(String path) {
-    final lower = path.toLowerCase();
-    if (lower.endsWith('.png')) return 'png';
-    if (lower.endsWith('.gif')) return 'gif';
-    if (lower.endsWith('.bmp')) return 'bmp';
-    if (lower.endsWith('.webp')) return 'webp';
-    if (lower.endsWith('.tif') || lower.endsWith('.tiff')) return 'tiff';
-    return 'jpeg';
+  /// เดิม: ApiService.uploadImageAndGetUrl({imageFile, uid, bucket?}) -> String?
+  static Future<String?> uploadImageAndGetUrl({
+    required File imageFile,
+    required String uid,
+    String? bucket, // คงพารามิเตอร์เดิม (ยังไม่ใช้)
+  }) async {
+    final api = ApiService(_globalBaseUrl);
+    try {
+      final url = await api.uploadOnly(filePath: imageFile.path, uid: uid);
+      return url;
+    } catch (e) {
+      // ignore: avoid_print
+      print('uploadImageAndGetUrl compat failed: $e');
+      return null;
+    }
   }
 
+  /// เดิม: ApiService.getNutritionByMenuName(String) -> Map<String,dynamic>?
+  /// (static wrapper เรียก instance.fetchNutritionByMenuName เพื่อไม่พังโค้ดเดิม)
+  static Future<Map<String, dynamic>?> getNutritionByMenuName(String menuName) async {
+    final api = ApiService(_globalBaseUrl);
+    try {
+      final map = await api.fetchNutritionByMenuName(menuName); // ← ใช้ชื่อ instance ใหม่
+      return map;
+    } catch (e) {
+      // ignore: avoid_print
+      print('getNutritionByMenuName compat failed: $e');
+      return null;
+    }
+  }
+
+  // =============== helpers ===============
   static String _joinBase(String base, String rel) {
     if (rel.startsWith('http://') || rel.startsWith('https://')) return rel;
     if (base.endsWith('/') && rel.startsWith('/')) {

@@ -10,7 +10,6 @@ import 'package:main/services/api_service.dart';
 class FoodResultPage extends StatefulWidget {
   final String menuName;
 
-  /// รูปที่ใช้แสดงผลและส่งกลับ (รองรับทั้ง local path และ URL)
   final String imagePath;
 
   /// payload โภชนาการจากโมเดล
@@ -267,7 +266,7 @@ class _FoodResultPageState extends State<FoodResultPage> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
-  // ===== ส่งฟีดแบ็กเข้า Firestore (login เท่านั้น) =====
+  // ===== ส่งฟีดแบ็กเข้า Firestore =====
   Future<void> _submitFeedback() async {
     setState(() => _submittingFeedback = true);
     try {

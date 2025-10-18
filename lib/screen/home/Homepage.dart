@@ -1037,7 +1037,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
 
   // ----- เลือกภาพ & เพิ่มเมนู -----
   void _showPickOptionsDialog() {
-    // NOTE: ถ้าต้องการ “ห้ามใช้” ในโหมด guest ให้เช็ค _isLoggedIn ที่นี่ได้
+
     showModalBottomSheet(
       context: context,
       builder: (BuildContext context) {
@@ -1065,6 +1065,38 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
         );
       },
     );
+  }
+
+  void _pickImage(ImageSource source) async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: source);
+    if (image == null) return;
+
+    final result = await ApiService.uploadImage(File(image.path));
+    if (result == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('ไม่สามารถทำนายเมนูได้')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    final selectedData = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => FoodResultPage(
+          menuName: result['menu_name'],
+          imagePath: image.path,
+          menuData: result,
+        ),
+      ),
+    );
+
+    if (selectedData == null) return;
+
+    await _addMenuFromSelection(selectedData);
   }
 
   // ====== helper: เลือกรูปที่ต้องใช้สำหรับฝั่งล็อกอิน (URL ก่อน ถ้าไม่มีค่อย fallback เป็น path) ======
@@ -1131,38 +1163,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
       await _loadDataFor(_selectedDate);
       await _loadDailyBlood();
     }
-  }
-
-  void _pickImage(ImageSource source) async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: source);
-    if (image == null) return;
-
-    final result = await ApiService.uploadImage(File(image.path));
-    if (result == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ไม่สามารถทำนายเมนูได้')),
-      );
-      return;
-    }
-
-    if (!mounted) return;
-
-    final selectedData = await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => FoodResultPage(
-          menuName: result['menu_name'],
-          imagePath: image.path,
-          menuData: result,
-        ),
-      ),
-    );
-
-    if (selectedData == null) return;
-
-    await _addMenuFromSelection(selectedData);
   }
 
   // ----- Formats / Utils -----
