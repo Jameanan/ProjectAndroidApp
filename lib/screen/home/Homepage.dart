@@ -1099,14 +1099,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     await _addMenuFromSelection(selectedData);
   }
 
-  // ====== helper: เลือกรูปที่ต้องใช้สำหรับฝั่งล็อกอิน (URL ก่อน ถ้าไม่มีค่อย fallback เป็น path) ======
-  String _imageForLogin(Map<String, dynamic> selectedData) {
-    final url = selectedData['imageUrl'];
-    if (url is String && url.trim().isNotEmpty) return url;
-    final path = selectedData['imagePath'];
-    return path is String ? path : '';
-  }
-
   // เพิ่มเมนูจากผลลัพธ์หน้า Search (หรือที่อื่นที่ส่งรูปแบบเดียวกัน)
   Future<void> _addMenuFromSelection(Map<String, dynamic> selectedData) async {
     final useNoSugar = selectedData['useNoSugar'] == true;

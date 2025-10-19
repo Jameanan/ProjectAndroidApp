@@ -39,7 +39,7 @@ class UserProfileService {
   // ----------------- mapper -----------------
   UserModel _fromMap(Map<String, dynamic> d) {
     return UserModel(
-      // username/password เก็บไว้เฉย ๆ (ถ้าใช้ Firebase Auth อาจไม่จำเป็น)
+      // username เก็บไว้เฉย ๆ (ถ้าใช้ Firebase Auth อาจไม่จำเป็น)
       username: (d['username'] ?? '') as String,
       birthdate: d['birthdate'] as String?,
       gender: (d['gender'] ?? 0) as int,

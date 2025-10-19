@@ -16,12 +16,10 @@ class ApiService {
   /// POST /predict/ : อัปโหลดรูปให้โมเดลทำนาย
   Future<Map<String, dynamic>> predict({
     required String filePath,
-    bool useNoSugar = false,
     String? uid,
   }) async {
     final uri = Uri.parse('$baseUrl/predict/');
     final req = http.MultipartRequest('POST', uri)
-      ..fields['use_nosugar'] = useNoSugar.toString()
       ..fields['save_image']  = 'true'
       ..fields['uid']         = uid ?? 'public'
       ..files.add(await http.MultipartFile.fromPath(
@@ -34,33 +32,6 @@ class ApiService {
       throw Exception('predict failed: ${resp.statusCode} ${resp.body}');
     }
     return jsonDecode(resp.body) as Map<String, dynamic>;
-  }
-
-  /// POST /upload-image : อัปโหลดรูปเก็บไฟล์และได้ URL
-  Future<String> uploadOnly({
-    required String filePath,
-    String? uid,
-  }) async {
-    final uri = Uri.parse('$baseUrl/upload-image');
-    final req = http.MultipartRequest('POST', uri)
-      ..fields['uid'] = uid ?? 'public'
-      ..files.add(await http.MultipartFile.fromPath(
-        'file', filePath, contentType: MediaType('image','jpeg'),
-      ));
-
-    final streamed = await req.send();
-    final resp = await http.Response.fromStream(streamed);
-    if (resp.statusCode != 200) {
-      throw Exception('upload failed: ${resp.statusCode} ${resp.body}');
-    }
-    final map = jsonDecode(resp.body) as Map<String, dynamic>;
-    final direct = (map['url'] as String?)?.trim();
-    if (direct != null && direct.isNotEmpty) return direct;
-
-    final rel = (map['image_path'] as String?)?.trim();
-    if (rel != null && rel.isNotEmpty) return _joinBase(baseUrl, rel);
-
-    throw Exception('upload failed: no url in response');
   }
 
   /// GET /nutrition/<menuName> : (instance) — เปลี่ยนชื่อเพื่อไม่ชนกับ static
@@ -81,7 +52,6 @@ class ApiService {
     try {
       final map = await api.predict(
         filePath: imageFile.path,
-        useNoSugar: false,
         uid: 'public',
       );
       return map;
@@ -121,6 +91,33 @@ class ApiService {
       print('getNutritionByMenuName compat failed: $e');
       return null;
     }
+  }
+
+  /// POST /upload-image : อัปโหลดรูปเก็บไฟล์และได้ URL
+  Future<String> uploadOnly({
+    required String filePath,
+    String? uid,
+  }) async {
+    final uri = Uri.parse('$baseUrl/upload-image');
+    final req = http.MultipartRequest('POST', uri)
+      ..fields['uid'] = uid ?? 'public'
+      ..files.add(await http.MultipartFile.fromPath(
+        'file', filePath, contentType: MediaType('image','jpeg'),
+      ));
+
+    final streamed = await req.send();
+    final resp = await http.Response.fromStream(streamed);
+    if (resp.statusCode != 200) {
+      throw Exception('upload failed: ${resp.statusCode} ${resp.body}');
+    }
+    final map = jsonDecode(resp.body) as Map<String, dynamic>;
+    final direct = (map['url'] as String?)?.trim();
+    if (direct != null && direct.isNotEmpty) return direct;
+
+    final rel = (map['image_path'] as String?)?.trim();
+    if (rel != null && rel.isNotEmpty) return _joinBase(baseUrl, rel);
+
+    throw Exception('upload failed: no url in response');
   }
 
   // =============== helpers ===============

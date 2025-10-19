@@ -32,6 +32,7 @@ class _MonthPageState extends State<MonthPage> {
   }
 
   // ===== Helpers (วันที่/ไฟร์สโตร์) =====
+  // d = date
   DateTime _firstDay(DateTime d) => DateTime(d.year, d.month, 1);
   DateTime _lastDay(DateTime d)  => DateTime(d.year, d.month + 1, 0);
   int _daysInMonth(DateTime d)   => _lastDay(d).day;
@@ -104,7 +105,7 @@ class _MonthPageState extends State<MonthPage> {
             for (final m in menus) {
               final nd = (m['menuData']?['nutrition_data'] ?? {}) as Map<String, dynamic>;
               final key = (m['useNoSugar'] == true) ? 'nosugar_nutrition' : 'sugar_nutrition';
-              final g = (nd[key] ?? {}) as Map<String, dynamic>;
+              final g = (nd[key] ?? {}) as Map<String, dynamic>; //g = group
               eaten   += _toD(g['Calorie']);
               sugar   += _toD(g['Sugar']);
               protein += _toD(g['Protein']);

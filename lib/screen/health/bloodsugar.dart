@@ -51,12 +51,6 @@ class _BloodSugarPageState extends State<BloodSugarPage> {
     final at = (widget.selectedDate ?? now);
     final dayOnly = DateTime(at.year, at.month, at.day);
     final todayOnly = DateTime(now.year, now.month, now.day);
-    if (dayOnly.isAfter(todayOnly)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('ไม่สามารถบันทึกค่าน้ำตาลในวันอนาคตได้')),
-      );
-      return;
-    }
 
     if (_isLoggedIn) {
       // Login → ผ่าน SessionProvider (ไป Firestore)

@@ -22,7 +22,7 @@ class UserModel {
   factory UserModel.fromMap(Map<String, dynamic> map) {
     return UserModel(
       username: map['username'],
-      birthdate: map['birthdate'], // ตรงกับ DBusers.insertUser
+      birthdate: map['birthdate'],
       gender: map['gender'],
       diabetes: map['diabetes'],
       height: map['height'],
