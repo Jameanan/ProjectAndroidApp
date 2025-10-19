@@ -382,9 +382,9 @@ class SessionProvider extends ChangeNotifier {
 
     double base;
     if (u.gender == 0) {
-      base = 66 + (u.weight * 13.7) + (u.height * 5) - (age * 6.8);
+      base = (u.weight * 10) + (u.height * 6.25) - (age * 5) + 5;
     } else {
-      base = 665 + (u.weight * 9.6) + (u.height * 1.8) - (age * 4.7);
+      base = (u.weight * 10) + (u.height * 6.25) - (age * 5) - 161;
     }
     _bmr = base * _activityFactor(u.exerciseLevel);
 
