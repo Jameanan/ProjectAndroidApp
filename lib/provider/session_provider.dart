@@ -3,32 +3,40 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+// ===== FIREBASE AUTH / FIRESTORE (ออนไลน์, โหมดล็อกอิน) =====
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_firestore/cloud_firestore.dart' show FieldPath;
 
+// ===== DATA MODEL (ใช้ถือข้อมูลในแอพ ไม่ผูก DB โดยตรง) =====
 import 'package:main/models/user.dart';
+
+// ===== FIRESTORE REPO (ออนไลน์) =====
 import 'package:main/services/daily_repo.dart';
+
+// ===== SQLITE (ออฟไลน์, โหมด guest) =====
 import 'package:main/database/dbusers.dart';
 
 class SessionProvider extends ChangeNotifier {
-  String? _ownerUid;
-  String? _currentUsername;
-  UserModel? _user;
+  // ====== สถานะบัญชีผู้ใช้ (ล็อกอินถ้ามี) ======
+  String? _ownerUid;                 // ===== FIRESTORE: uid ผู้ใช้ที่ล็อกอิน (null = guest)
+  String? _currentUsername;         // ชื่อที่ใช้แสดงผล
+  UserModel? _user;                 // โปรไฟล์ของผู้ใช้ (อ่านจาก Firestore เมื่อ login)
 
   String? get ownerUid => _ownerUid;
   String? get currentUsername => _currentUsername;
   UserModel? get user => _user;
   bool get isLoggedIn => _ownerUid != null && _ownerUid!.isNotEmpty;
 
-  DailyRepo? _dailyRepo;
+  // ===== REPO ต่อ Firestore เฉพาะโหมดล็อกอิน =====
+  DailyRepo? _dailyRepo;            // ===== FIRESTORE
   DailyRepo? get dailyRepo => _dailyRepo;
 
-  // ===== โปรไฟล์ listener แบบเรียลไทม์ =====
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub;
+  // ===== โปรไฟล์ listener แบบเรียลไทม์ (เฉพาะ Firestore) =====
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _profileSub; // ===== FIRESTORE
 
-  // state “วันนี้”
-  final List<Map<String, dynamic>> _menus = [];
+  // ===== สถานะ “วันนี้” ที่โชว์บนหน้าหลัก =====
+  final List<Map<String, dynamic>> _menus = []; // รายการเมนูวันนี้ (มาจาก Firestore หรือ SQLite)
   List<Map<String, dynamic>> get menus => List.unmodifiable(_menus);
 
   double _eaten = 0, _sugar = 0, _protein = 0, _transFat = 0, _fiber = 0, _carb = 0;
@@ -47,7 +55,7 @@ class SessionProvider extends ChangeNotifier {
   double get bmr => _bmr;
   double get sugarLimit => _sugarLimit;
 
-  // reset ต่อวัน
+  // ===== รีเซ็ตข้อมูลรายวัน (เก็บใน SharedPreferences — local) =====
   String? _lastResetKey;
   String _todayKey([DateTime? now]) {
     final t = now ?? DateTime.now();
@@ -55,6 +63,7 @@ class SessionProvider extends ChangeNotifier {
   }
   String _resetPrefKeyForOwner() => 'lastReset_${_ownerUid ?? DBusers.GUEST_USERNAME}';
 
+  // ===== util แปลงค่าเป็น double (ใช้ทั้งสองโหมด) =====
   double _toD(dynamic v) {
     if (v == null) return 0.0;
     if (v is num) return v.toDouble();
@@ -68,19 +77,20 @@ class SessionProvider extends ChangeNotifier {
   // ------------------------------------------------------------------
   Future<void> init() async {
     try {
-      final fbUser = FirebaseAuth.instance.currentUser;
+      final fbUser = FirebaseAuth.instance.currentUser; // ===== FIREBASE AUTH
 
       if (fbUser != null) {
-        // login mode
+        // ===== FIRESTORE: โหมดล็อกอิน =====
         _ownerUid = fbUser.uid;
         _currentUsername = (fbUser.email ?? '').split('@').first;
-        _dailyRepo = DailyRepo(ownerUid: fbUser.uid);
+        _dailyRepo = DailyRepo(ownerUid: fbUser.uid); // ใช้ repo คุย Firestore
 
+        // โหลดโปรไฟล์จาก Firestore
         try {
           final doc = await FirebaseFirestore.instance
               .collection('users')
               .doc(fbUser.uid)
-              .get();
+              .get(); // ===== FIRESTORE: read
           final d = doc.data();
           _user = (d != null)
               ? UserModel(
@@ -100,8 +110,9 @@ class SessionProvider extends ChangeNotifier {
 
         _recalcLimits();
 
+        // โหลด “วันนี้” จาก Firestore
         try {
-          await _loadTodayFromFirestore();
+          await _loadTodayFromFirestore(); // ===== FIRESTORE
         } catch (e) {
           debugPrint('load today from Firestore failed: $e');
           _menus.clear();
@@ -109,22 +120,25 @@ class SessionProvider extends ChangeNotifier {
           _currentBloodSugarMgdl = null;
         }
 
-        // เริ่มฟังโปรไฟล์แบบเรียลไทม์
-        _startProfileListener();
+        // เริ่มฟังโปรไฟล์แบบเรียลไทม์จาก Firestore
+        _startProfileListener(); // ===== FIRESTORE
       } else {
-        // guest mode
+        // ===== SQLITE: โหมด guest (ออฟไลน์) =====
         _ownerUid = null;
         _currentUsername = DBusers.GUEST_USERNAME;
-        _dailyRepo = null;
+        _dailyRepo = null;  // ไม่ใช้ Firestore
         _user = null;
         _bmr = 0;
         _sugarLimit = 0;
-        await _loadTodayFromSqlite();
 
-        // เผื่อก่อนหน้านี้มี listener ค้าง
-        _stopProfileListener();
+        // โหลด “วันนี้” จาก SQLite
+        await _loadTodayFromSqlite(); // ===== SQLITE
+
+        // ปิด listener เผื่อค้างจากตอนล็อกอิน
+        _stopProfileListener(); // ===== FIRESTORE (ปิด)
       }
 
+      // อ่านคีย์รีเซ็ตวันล่าสุดจาก local
       final prefs = await SharedPreferences.getInstance();
       _lastResetKey = prefs.getString(_resetPrefKeyForOwner());
 
@@ -136,13 +150,13 @@ class SessionProvider extends ChangeNotifier {
     }
   }
 
-  // ให้หน้าอื่นเรียกโหลด “วันนี้” ได้
+  // ให้หน้าอื่นเรียกโหลด “วันนี้” ได้ (สลับตามโหมด)
   Future<void> loadTodayFromBackend() async {
     try {
       if (isLoggedIn) {
-        await _loadTodayFromFirestore();
+        await _loadTodayFromFirestore(); // ===== FIRESTORE
       } else {
-        await _loadTodayFromSqlite();
+        await _loadTodayFromSqlite();    // ===== SQLITE
       }
     } catch (e) {
       debugPrint('loadTodayFromBackend error: $e');
@@ -154,9 +168,11 @@ class SessionProvider extends ChangeNotifier {
   // ------------------------------------------------------------------
   // Load today
   // ------------------------------------------------------------------
+
+  // ===== FIRESTORE: โหลด “วันนี้” จาก Firestore =====
   Future<void> _loadTodayFromFirestore() async {
     if (_dailyRepo == null) return;
-    final data = await _dailyRepo!.getDailyLog(day: DateTime.now());
+    final data = await _dailyRepo!.getDailyLog(day: DateTime.now()); // read doc
 
     final menusList = (data?['menus'] is List) ? (data?['menus'] as List) : const [];
     _menus
@@ -181,9 +197,10 @@ class SessionProvider extends ChangeNotifier {
     _currentBloodSugarMgdl = (sVal is num) ? sVal.toDouble() : null;
   }
 
+  // ===== SQLITE: โหลด “วันนี้” จาก SQLite =====
   Future<void> _loadTodayFromSqlite() async {
     final today = DateTime.now();
-    final rows = await DBusers.instance.getLogsByDate(day: today);
+    final rows = await DBusers.instance.getLogsByDate(day: today); // ===== SQLITE: query
 
     _menus.clear();
     _eaten = _sugar = _protein = _transFat = _fiber = _carb = 0;
@@ -218,7 +235,7 @@ class SessionProvider extends ChangeNotifier {
       _carb += nutrition['Carb'] as double;
     }
 
-    final bsRow = await DBusers.instance.getDailyBloodSugar(day: today);
+    final bsRow = await DBusers.instance.getDailyBloodSugar(day: today); // ===== SQLITE
     _currentBloodSugarMgdl = (bsRow != null) ? (bsRow['value'] as num).toDouble() : null;
   }
 
@@ -234,14 +251,14 @@ class SessionProvider extends ChangeNotifier {
     _currentBloodSugarMgdl = null;
 
     _lastResetKey = today;
-    final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance(); // local
     await prefs.setString(_resetPrefKeyForOwner(), today);
 
     try {
       if (isLoggedIn) {
-        await _loadTodayFromFirestore();
+        await _loadTodayFromFirestore(); // ===== FIRESTORE
       } else {
-        await _loadTodayFromSqlite();
+        await _loadTodayFromSqlite();    // ===== SQLITE
       }
     } catch (e) {
       debugPrint('checkAndResetDaily reload error: $e');
@@ -260,6 +277,7 @@ class SessionProvider extends ChangeNotifier {
       }) async {
     final day = at ?? DateTime.now();
 
+    // อัปเดต state ในแอพ (เหมือนกันทั้งสองโหมด)
     _menus.add(menu);
     final g = ((menu['menuData']?['nutrition_data'] ?? {}) as Map)[nutritionKey] ?? {};
     _eaten += _toD(g['Calorie']);
@@ -270,6 +288,7 @@ class SessionProvider extends ChangeNotifier {
     _carb += _toD(g['Carb']);
     notifyListeners();
 
+    // ===== FIRESTORE: บันทึกเข้า dailyLogs เมื่อ login =====
     if (isLoggedIn && _dailyRepo != null) {
       try {
         await _dailyRepo!.addMenu(
@@ -283,7 +302,6 @@ class SessionProvider extends ChangeNotifier {
             'Fiber': _toD(g['Fiber']),
             'Carb': _toD(g['Carb']),
           },
-          // 🔸 ส่งลิมิตไปให้ DailyRepo บันทึก “สาเหตุที่เกิน”
           calorieLimit: _bmr,
           sugarLimit: _sugarLimit,
         );
@@ -291,8 +309,10 @@ class SessionProvider extends ChangeNotifier {
         debugPrint('addMenu Firestore failed: $e');
       }
     }
+    // หมายเหตุ: โหมด guest จะบันทึก SQLite ตอนเพิ่มผ่านหน้า/บริการ guest (ไฟล์อื่น)
   }
 
+  // อัปเดตค่าน้ำตาล “เฉพาะใน state” (ใช้ทันที)
   Future<void> setBloodSugar({required double value, String unit = 'mg/dL'}) async {
     _currentBloodSugarMgdl = value;
     notifyListeners();
@@ -303,6 +323,7 @@ class SessionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // เซฟค่ารายวันลง backend ตามโหมด
   Future<void> setBloodSugarForDay({
     required DateTime day,
     required double value,
@@ -312,12 +333,14 @@ class SessionProvider extends ChangeNotifier {
     final mgdl = value;
 
     if (isLoggedIn && _dailyRepo != null) {
+      // ===== FIRESTORE =====
       try {
         await _dailyRepo!.setBloodSugarForDay(day: day, value: mgdl, unit: 'mg/dL');
       } catch (e) {
         debugPrint('setBloodSugarForDay Firestore failed: $e');
       }
     } else {
+      // ===== SQLITE =====
       await DBusers.instance.upsertDailyBloodSugar(
         value: mgdl,
         unit: 'mg/dL',
@@ -325,9 +348,10 @@ class SessionProvider extends ChangeNotifier {
       );
     }
 
+    // ถ้าเป็น “วันนี้” อัปเดต state ให้ UI เห็นทันที
     final now = DateTime.now();
     if (day.year == now.year && day.month == now.month && day.day == now.day) {
-      _currentBloodSugarMgdl = mgdl; // อัปเดตทันทีเพื่อให้ Home เห็นทันที
+      _currentBloodSugarMgdl = mgdl;
       notifyListeners();
     }
   }
@@ -337,12 +361,13 @@ class SessionProvider extends ChangeNotifier {
     double? found;
 
     if (isLoggedIn) {
+      // ===== FIRESTORE: อ่านจาก dailyLogs/{YYYY-MM-DD} =====
       try {
         final id = _ymd(day);
         final doc = await FirebaseFirestore.instance
             .collection('users')
             .doc(_ownerUid!)
-            .collection('dailyLogs') // ✅ ใช้ dailyLogs ให้ตรง
+            .collection('dailyLogs')
             .doc(id)
             .get();
         final data = doc.data();
@@ -354,12 +379,14 @@ class SessionProvider extends ChangeNotifier {
         debugPrint('refreshBloodSugarForDay Firestore failed: $e');
       }
     } else {
+      // ===== SQLITE: อ่านจากตาราง daily_blood_sugar =====
       final row = await DBusers.instance.getDailyBloodSugar(day: day);
       if (row != null) {
         found = (row['value'] as num).toDouble();
       }
     }
 
+    // ถ้าเป็น “วันนี้” อัปเดต state
     final now = DateTime.now();
     if (day.year == now.year && day.month == now.month && day.day == now.day) {
       _currentBloodSugarMgdl = found;
@@ -369,7 +396,7 @@ class SessionProvider extends ChangeNotifier {
   }
 
   // ------------------------------------------------------------------
-  // Profile & limits
+  // Profile & limits (คำนวณในแอพ ไม่ผูก DB)
   // ------------------------------------------------------------------
   void _recalcLimits() {
     if (_user == null) {
@@ -380,6 +407,7 @@ class SessionProvider extends ChangeNotifier {
     final u = _user!;
     final age = _ageFromUser(u);
 
+    // Mifflin–St Jeor
     double base;
     if (u.gender == 0) {
       base = (u.weight * 10) + (u.height * 6.25) - (age * 5) + 5;
@@ -388,6 +416,7 @@ class SessionProvider extends ChangeNotifier {
     }
     _bmr = base * _activityFactor(u.exerciseLevel);
 
+    // ตั้งลิมิตน้ำตาลตามอายุ/ภาวะ
     if (u.diabetes == 1) {
       _sugarLimit = 10.0;
     } else if (age >= 6 && age <= 13) {
@@ -457,7 +486,7 @@ class SessionProvider extends ChangeNotifier {
   }
 
   // ------------------------------------------------------------------
-  // ช่วยดึง “สรุปช่วงวัน” สำหรับกราฟ สัปดาห์/เดือน
+  // สรุปช่วงวันสำหรับกราฟ
   // ------------------------------------------------------------------
   Future<List<Map<String, dynamic>>> getRangeTotals(DateTime start, DateTime end) async {
     final List<Map<String, dynamic>> out = [];
@@ -465,6 +494,7 @@ class SessionProvider extends ChangeNotifier {
     final e = DateTime(end.year, end.month, end.day);
 
     if (isLoggedIn) {
+      // ===== FIRESTORE: ดึงช่วงวันจากคอลเลกชัน dailyLogs =====
       final uid = _ownerUid!;
       final startId = _ymd(s);
       final endId = _ymd(e);
@@ -472,7 +502,7 @@ class SessionProvider extends ChangeNotifier {
       final qs = await FirebaseFirestore.instance
           .collection('users')
           .doc(uid)
-          .collection('dailyLogs') // ✅ ใช้ dailyLogs
+          .collection('dailyLogs')
           .where(FieldPath.documentId, isGreaterThanOrEqualTo: startId)
           .where(FieldPath.documentId, isLessThanOrEqualTo: endId)
           .get();
@@ -541,9 +571,10 @@ class SessionProvider extends ChangeNotifier {
         d = d.add(const Duration(days: 1));
       }
     } else {
+      // ===== SQLITE: คิวรีจาก DB โลคอลตามวัน =====
       DateTime d = s;
       while (!d.isAfter(e)) {
-        final totals = await DBusers.instance.getDailyTotals(day: d);
+        final totals = await DBusers.instance.getDailyTotals(day: d); // SQLite
         out.add({
           'date': _ymd(d),
           'cal': (totals['cal'] ?? 0.0).toDouble(),
@@ -565,8 +596,10 @@ class SessionProvider extends ChangeNotifier {
   // ------------------------------------------------------------------
   // Switch mode helpers
   // ------------------------------------------------------------------
+
+  // ===== SQLITE: เข้าสู่โหมด guest (ปิด Firestore listener และโหลดข้อมูลจาก SQLite) =====
   Future<void> enterGuestMode() async {
-    _stopProfileListener(); // ปิด listener เมื่อออกจากโหมดผู้ใช้
+    _stopProfileListener(); // ===== FIRESTORE: ปิด listener
 
     _ownerUid = null;
     _currentUsername = DBusers.GUEST_USERNAME;
@@ -575,7 +608,7 @@ class SessionProvider extends ChangeNotifier {
     _bmr = 0;
     _sugarLimit = 0;
 
-    await _loadTodayFromSqlite();
+    await _loadTodayFromSqlite(); // ===== SQLITE
 
     final prefs = await SharedPreferences.getInstance();
     _lastResetKey = prefs.getString(_resetPrefKeyForOwner());
@@ -583,13 +616,15 @@ class SessionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ===== FIRESTORE: เข้าสู่โหมดผู้ใช้ (ล็อกอิน) =====
   Future<void> enterUserMode(String uid, String username) async {
     _ownerUid = uid;
     _currentUsername = username;
-    _dailyRepo = DailyRepo(ownerUid: uid);
+    _dailyRepo = DailyRepo(ownerUid: uid); // Firestore
 
+    // โหลดโปรไฟล์จาก Firestore
     try {
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get(); // read
       final d = doc.data();
       _user = (d != null)
           ? UserModel(
@@ -607,8 +642,9 @@ class SessionProvider extends ChangeNotifier {
     }
     _recalcLimits();
 
+    // โหลด “วันนี้” จาก Firestore
     try {
-      await _loadTodayFromFirestore();
+      await _loadTodayFromFirestore(); // ===== FIRESTORE
     } catch (e) {
       debugPrint('enterUserMode loadToday failed: $e');
     }
@@ -617,20 +653,20 @@ class SessionProvider extends ChangeNotifier {
     _lastResetKey = prefs.getString(_resetPrefKeyForOwner());
     await checkAndResetDaily();
 
-    // เริ่มฟังโปรไฟล์ทันทีหลังเข้าสู่ระบบ
-    _startProfileListener();
+    // เริ่มฟังโปรไฟล์เรียลไทม์จาก Firestore
+    _startProfileListener(); // ===== FIRESTORE
 
     notifyListeners();
   }
 
   Future<void> logout() async {
     try {
-      await FirebaseAuth.instance.signOut();
+      await FirebaseAuth.instance.signOut(); // ===== FIREBASE AUTH
     } catch (_) {}
-    await enterGuestMode();
+    await enterGuestMode(); // สลับไปโหมด SQLITE
   }
 
-  // ====== LISTENER helpers ======
+  // ====== LISTENER helpers (Firestore only) ======
   void _startProfileListener() {
     _stopProfileListener();
     if (!isLoggedIn) return;
@@ -639,7 +675,7 @@ class SessionProvider extends ChangeNotifier {
     _profileSub = FirebaseFirestore.instance
         .collection('users')
         .doc(uid)
-        .snapshots()
+        .snapshots()               // ===== FIRESTORE realtime
         .listen((snap) {
       final d = snap.data();
       if (d == null) return;
